@@ -1,0 +1,59 @@
+import sqlite3
+import json
+
+DB_NAME = 'empresa_nomina.db'
+
+def actualizar_desde_json(ruta_archivo):
+    """Actualiza salarios masivamente desde un JSON (DML: UPDATE)."""
+    try:
+        with open(ruta_archivo, mode='r', encoding='utf-8') as archivo:
+            datos = json.load(archivo)
+            
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            for empleado in datos.get("actualizaciones_salariales", []):
+                # DML: Actualización de estado
+                cursor.execute(
+                    "UPDATE empleados SET salario = ? WHERE rfc = ?",
+                    (empleado["nuevo_salario"], empleado["rfc"])
+                )
+            conn.commit()
+            print(f"Se procesaron {cursor.rowcount} actualizaciones desde JSON.")
+            
+    except json.JSONDecodeError as e:
+        print(f"[Error Formato] El archivo JSON está mal formado o corrupto: {e}")
+    except FileNotFoundError:
+        print(f"[Error I/O] Archivo JSON no encontrado.")
+    except sqlite3.Error as e:
+        conn.rollback() # Revierte la transacción en caso de fallo crítico
+        print(f"[Error BD] Fallo en la actualización (Rollback ejecutado): {e}")
+
+def exportar_a_json(ruta_destino):
+    """Serializa la tabla completa hacia un archivo JSON."""
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            # Row_factory permite recuperar los registros como diccionarios
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM empleados")
+            # Convertimos las filas a una lista de diccionarios
+            registros = [dict(fila) for fila in cursor.fetchall()]
+            
+        estructura_json = {"empleados_activos": registros}
+        
+        with open(ruta_destino, mode='w', encoding='utf-8') as archivo:
+            json.dump(estructura_json, archivo, indent=4, ensure_ascii=False)
+            print(f"Estado de la aplicación serializado en JSON: {ruta_destino}")
+            
+    except Exception as e:
+        print(f"[Error] Fallo en la exportación a JSON: {e}")
+
+# --- Ejecución del Caso JSON ---
+if __name__ == "__main__":
+    # Archivo JSON de prueba
+    json_prueba = {"actualizaciones_salariales": [{"rfc": "PEQJ900101XYZ", "nuevo_salario": 16000.00}]}
+    with open('ajuste_salarial.json', 'w') as f:
+        json.dump(json_prueba, f)
+        
+    actualizar_desde_json('ajuste_salarial.json')
+    exportar_a_json('auditoria_nomina.json')
