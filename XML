@@ -1,0 +1,75 @@
+import sqlite3
+import xml.etree.ElementTree as ET
+
+DB_NAME = 'empresa_nomina.db'
+
+def importar_desde_xml(ruta_archivo):
+    """Lee un XML jerárquico e inserta los datos (DML: INSERT)."""
+    try:
+        arbol = ET.parse(ruta_archivo)
+        raiz = arbol.getroot()
+        
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            for emp in raiz.findall('Empleado'):
+                nombre = emp.find('Nombre').text
+                rfc = emp.find('RFC').text
+                salario = float(emp.find('Salario').text)
+                
+                try:
+                    cursor.execute(
+                        "INSERT INTO empleados (nombre, rfc, salario) VALUES (?, ?, ?)",
+                        (nombre, rfc, salario)
+                    )
+                except sqlite3.IntegrityError:
+                    pass # Omitir duplicados silenciosamente para este caso
+            conn.commit()
+            print("Importación XML procesada correctamente.")
+            
+    except ET.ParseError as e:
+        print(f"[Error XML] Error al parsear la estructura del XML: {e}")
+    except Exception as e:
+        print(f"[Error Crítico] Excepción durante la lectura XML: {e}")
+
+def exportar_a_xml(ruta_destino):
+    """Construye un árbol XML desde la base de datos y lo guarda en disco."""
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT nombre, rfc, salario FROM empleados")
+            registros = cursor.fetchall()
+            
+        # Creación del elemento raíz
+        raiz = ET.Element("NominaEmpresa")
+        
+        for fila in registros:
+            empleado = ET.SubElement(raiz, "Empleado")
+            ET.SubElement(empleado, "Nombre").text = str(fila[0])
+            ET.SubElement(empleado, "RFC").text = str(fila[1])
+            ET.SubElement(empleado, "Salario").text = str(fila[2])
+            
+        arbol = ET.ElementTree(raiz)
+        arbol.write(ruta_destino, encoding='utf-8', xml_declaration=True)
+        print(f"Archivo XML generado: {ruta_destino}")
+        
+    except sqlite3.Error as e:
+        print(f"[Error BD] No se pudo leer la base de datos: {e}")
+    except IOError as e:
+        print(f"[Error I/O] No se pudo escribir el archivo XML: {e}")
+
+# --- Ejecución del Caso XML ---
+if __name__ == "__main__":
+    # Archivo XML de prueba
+    xml_prueba = """<?xml version="1.0" encoding="utf-8"?>
+    <NominaEmpresa>
+        <Empleado>
+            <Nombre>Carlos Ruiz</Nombre>
+            <RFC>RUCA850320LMN</RFC>
+            <Salario>22500.00</Salario>
+        </Empleado>
+    </NominaEmpresa>"""
+    with open('nuevos_ingresos.xml', 'w', encoding='utf-8') as f:
+        f.write(xml_prueba)
+        
+    importar_desde_xml('nuevos_ingresos.xml')
+    exportar_a_xml('reporte_sat.xml')
