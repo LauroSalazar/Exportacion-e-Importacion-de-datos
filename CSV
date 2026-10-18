@@ -1,0 +1,78 @@
+import sqlite3
+import csv
+import os
+
+DB_NAME = 'empresa_nomina.db'
+
+def inicializar_bd():
+    """Crea la tabla de empleados si no existe."""
+    try:
+        # Se utiliza el bloque 'with' para asegurar el cierre de la conexión
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS empleados (
+                    id_empleado INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL,
+                    rfc TEXT NOT NULL UNIQUE,
+                    salario REAL NOT NULL
+                )
+            ''')
+            conn.commit()
+    except sqlite3.Error as e:
+        print(f"[Error DDL] Fallo al inicializar la base de datos: {e}")
+
+def importar_desde_csv(ruta_archivo):
+    """Lee un CSV e inserta los registros en la base de datos (DML: INSERT)."""
+    try:
+        with open(ruta_archivo, mode='r', encoding='utf-8') as archivo:
+            lector = csv.reader(archivo)
+            next(lector) # Saltar la cabecera
+            
+            with sqlite3.connect(DB_NAME) as conn:
+                cursor = conn.cursor()
+                for fila in lector:
+                    try:
+                        # DML: Inserción de estado
+                        cursor.execute(
+                            "INSERT INTO empleados (nombre, rfc, salario) VALUES (?, ?, ?)",
+                            (fila[0], fila[1], float(fila[2]))
+                        )
+                    except sqlite3.IntegrityError:
+                        print(f"[Aviso] El RFC {fila[1]} ya existe. Se omite para evitar duplicados fiscales.")
+                conn.commit()
+                print("Importación CSV completada con éxito.")
+                
+    except FileNotFoundError:
+        print(f"[Error I/O] No se encontró el archivo de origen: {ruta_archivo}")
+    except Exception as e:
+        print(f"[Error Crítico] Fallo inesperado en la importación: {e}")
+
+def exportar_a_csv(ruta_destino):
+    """Recupera el estado de la BD (DML: SELECT) y lo exporta a CSV."""
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT nombre, rfc, salario FROM empleados")
+            registros = cursor.fetchall()
+            
+        with open(ruta_destino, mode='w', encoding='utf-8', newline='') as archivo:
+            escritor = csv.writer(archivo)
+            escritor.writerow(['Nombre', 'RFC', 'Salario']) # Cabecera
+            escritor.writerows(registros)
+            print(f"Exportación exitosa. Archivo generado en: {ruta_destino}")
+            
+    except sqlite3.Error as e:
+        print(f"[Error BD] Fallo al recuperar el estado de la aplicación: {e}")
+    except IOError as e:
+        print(f"[Error I/O] Fallo al escribir el archivo destino: {e}")
+
+# --- Ejecución del Caso CSV ---
+if __name__ == "__main__":
+    inicializar_bd()
+    # Generamos un archivo de prueba temporal para el caso
+    with open('rh_origen.csv', 'w', encoding='utf-8') as f:
+        f.write("Nombre,RFC,Salario\nJuan Perez,PEQJ900101XYZ,15000.50\nMaria Lopez,LOMM920515ABC,18200.00")
+    
+    importar_desde_csv('rh_origen.csv')
+    exportar_a_csv('respaldo_nomina.csv')
